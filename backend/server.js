@@ -4,16 +4,23 @@ const mongoose = require("mongoose");
 const cors = require("cors");
 const fs = require("fs");
 const { exec } = require("child_process");
+const stringSimilarity = require("string-similarity");
 const updateFacultyDatabase = require("./utils/scraper");
 require("./utils/scheduler");
 const Faculty = require("./models/Faculty");
+const Subject = require("./models/Subject");
 
 const app = express();
-const PORT = 5000;
+const PORT = 4000;
 
 app.use(cors());
 app.use(express.json());
 
+
+// mongoose.connect("mongodb+srv://vinay:vinay@cluster0.wd0bvv6.mongodb.net/?retryWrites=true&w=majority&appName=Cluster0", {
+//   useNewUrlParser: true,
+//   useUnifiedTopology: true,
+// })
 // Connect to MongoDB
 mongoose.connect("mongodb://127.0.0.1:27017/timetableDB", {
   useNewUrlParser: true,
@@ -21,23 +28,6 @@ mongoose.connect("mongodb://127.0.0.1:27017/timetableDB", {
 })
   .then(() => console.log("✅ Connected to MongoDB"))
   .catch(err => console.error("❌ MongoDB connection error:", err));
-
-// Define MongoDB Schemas & Models
-const subjectSchema = new mongoose.Schema({
-  subjectCode: String,
-  subjectName: String,
-  lecturers: [String],
-});
-
-const facultySchema = new mongoose.Schema({
-  name: String,
-  empId: String,
-  designation: String,
-  witReport: { type: String, default: null }, // Path to uploaded WIT report
-  willReport: { type: String, default: null }, // Path to uploaded WILL report
-});
-
-const Subject = mongoose.model("Subject", subjectSchema);
 
 // Multer Setup for File Uploads
 const storage = multer.diskStorage({
@@ -51,38 +41,72 @@ updateFacultyDatabase();
 
 // -------------------------- ROUTES ----------------------------
 
-// 1. Upload Timetable and Extract Subjects
+// 1️⃣ Upload Timetable & Extract Subjects with Faculty Mapping
 app.post("/upload", upload.single("file"), async (req, res) => {
   try {
     if (!req.file) {
-      console.log("❌ No file received");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
-    console.log("✅ File uploaded:", req.file.path);
-
-    // Extract subjects using Python script
     const subjects = await extractSubjects(req.file.path);
-    console.log("📄 Extracted Subjects Before Saving:", JSON.stringify(subjects, null, 2));
-
     if (!subjects || subjects.length === 0) {
-      console.log("⚠ No subjects found, sending 400 response.");
       return res.status(400).json({ error: "No subjects found in the document." });
     }
 
-    // Store subjects in MongoDB with unique lecturers
+    const facultyList = await Faculty.find();
+    const facultyNames = facultyList.map(f => f.name.toLowerCase());
+
     for (const subject of subjects) {
+      let mappedFaculty = [];
+
+      for (const lecturer of subject.lecturers) {
+        console.log(`🔍 Checking lecturer: ${lecturer.trim()}`);
+
+        const matches = stringSimilarity.findBestMatch(lecturer.trim().toLowerCase(), facultyNames);
+        const bestMatch = matches.bestMatch;
+
+        if (bestMatch.rating > 0.7) {
+          const facultyMatch = facultyList.find(f => f.name.toLowerCase() === bestMatch.target);
+          console.log(`✅ Matched Faculty: ${facultyMatch.name} (Similarity: ${bestMatch.rating})`);
+
+          mappedFaculty.push({
+            name: facultyMatch.name,
+            empId: facultyMatch.empId,
+            designation: facultyMatch.designation,
+          });
+
+          // 🔥 Append subject *name* to `mappedSubjects`
+          if (!facultyMatch.mappedSubjects.includes(subject.subjectName)) {
+            facultyMatch.mappedSubjects.push(subject.subjectName);
+            await facultyMatch.save();
+            console.log(`📌 Added Subject: ${subject.subjectName} to ${facultyMatch.name}`);
+          }
+        } else {
+          console.log(`❌ No close match found for lecturer: ${lecturer} (Best: ${bestMatch.target} - ${bestMatch.rating})`);
+        }
+      }
+
+      subject.mappedFaculty = mappedFaculty;
+
+      // 🔄 Save subject in MongoDB
       const existingSubject = await Subject.findOne({ subjectCode: subject.subjectCode });
 
       if (existingSubject) {
-        const updatedLecturers = [...new Set([...existingSubject.lecturers, ...subject.lecturers])];
-        await Subject.updateOne({ subjectCode: subject.subjectCode }, { $set: { subjectName: subject.subjectName, lecturers: updatedLecturers } });
+        await Subject.updateOne(
+          { subjectCode: subject.subjectCode },
+          {
+            $set: {
+              subjectName: subject.subjectName,
+              lecturers: [...new Set([...existingSubject.lecturers, ...subject.lecturers])],
+              mappedFaculty: subject.mappedFaculty,
+            },
+          }
+        );
       } else {
         await Subject.create(subject);
       }
     }
 
-    console.log("✅ Subjects successfully saved to MongoDB");
     res.json({ subjects });
   } catch (error) {
     console.error("❌ Error processing file:", error);
@@ -113,18 +137,7 @@ async function extractSubjects(filePath) {
   });
 }
 
-// 2. Get Subjects
-app.get("/subjects", async (req, res) => {
-  try {
-    const subjects = await Subject.find();
-    res.json({ subjects });
-  } catch (error) {
-    console.error("❌ Error fetching subjects:", error);
-    res.status(500).json({ error: "Internal server error" });
-  }
-});
-
-// 3. Get Faculty Data
+// 2️⃣ Get Faculty with Mapped Subjects
 app.get("/faculty", async (req, res) => {
   try {
     const faculties = await Faculty.find();
@@ -135,25 +148,37 @@ app.get("/faculty", async (req, res) => {
   }
 });
 
-// 4. Upload Reports (WIT and WILL)
+// 3️⃣ Get Faculty Submission Status
+app.get("/faculty-status", async (req, res) => {
+  try {
+    const faculties = await Faculty.find();
+
+    const submitted = faculties.filter(f => f.witReport || f.willReport).length;
+    const notSubmitted = faculties.length - submitted;
+
+    res.json({ submitted, notSubmitted });
+  } catch (error) {
+    console.error("❌ Error fetching faculty status:", error);
+    res.status(500).json({ error: "Internal server error" });
+  }
+});
+
+// 4️⃣ Upload Reports (WIT and WILL)
 app.post("/upload-report/:empId", upload.single("file"), async (req, res) => {
   try {
     const { empId } = req.params;
     const { reportType } = req.body;
 
     if (!req.file) {
-      console.log("❌ No file received");
       return res.status(400).json({ error: "No file uploaded" });
     }
 
     if (!["wit", "will"].includes(reportType)) {
-      console.log("❌ Invalid report type");
       return res.status(400).json({ error: "Invalid report type" });
     }
 
     const faculty = await Faculty.findOne({ empId });
     if (!faculty) {
-      console.log("❌ Faculty not found");
       return res.status(404).json({ error: "Faculty not found" });
     }
 
@@ -166,7 +191,6 @@ app.post("/upload-report/:empId", upload.single("file"), async (req, res) => {
     }
 
     await faculty.save();
-    console.log(`✅ Report uploaded for ${faculty.name} (${reportType})`);
     res.json({ message: "Report uploaded successfully", faculty });
   } catch (error) {
     console.error("❌ Error uploading report:", error);
@@ -175,5 +199,11 @@ app.post("/upload-report/:empId", upload.single("file"), async (req, res) => {
 });
 
 // -------------------------- START SERVER ----------------------------
+const uploadDir = "uploads/";
+
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+  console.log("📂 Created 'uploads/' directory");
+}
 
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));

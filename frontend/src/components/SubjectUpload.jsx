@@ -16,7 +16,7 @@ function SubjectUpload() {
     formData.append('file', file);
 
     try {
-      const response = await axios.post('http://localhost:5000/upload', formData);
+      const response = await axios.post('http://localhost:4000/upload', formData);
       alert('Subjects extracted successfully!');
       console.log(response.data);
     } catch (error) {

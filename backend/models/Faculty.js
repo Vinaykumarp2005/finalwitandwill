@@ -1,15 +1,15 @@
-const mongoose = require('mongoose');
+const mongoose = require("mongoose");
 
 const facultySchema = new mongoose.Schema({
-  name: String,
-  empId: String,
-  designation: String,
-  reportSubmitted: { type: Boolean, default: false },
-  witReport: String, // Path to WIT report file
-  willReport: String // Path to WILL report file
+  name: { type: String, required: true },
+  empId: { type: String, required: true, unique: true },
+  designation: { type: String, required: true },
+  witReport: { type: String, default: "" }, 
+  willReport: { type: String, default: "" },
+  mappedSubjects: { type: [{ type: String, required: true }], default: [] }, // Stores subject names instead of codes
 });
 
 // Prevent overwriting if already declared
-const Faculty = mongoose.models.Faculty || mongoose.model('Faculty', facultySchema);
+const Faculty = mongoose.models.Faculty || mongoose.model("Faculty", facultySchema);
 
 module.exports = Faculty;
