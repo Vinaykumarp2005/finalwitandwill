@@ -4,7 +4,7 @@ import "bootstrap/dist/js/bootstrap.bundle.min.js";
 import "./Faculty.css";
 import logo from "../api/logo.jpeg";
 import { useNavigate } from "react-router-dom";
-
+import axios from "axios";
 function Faculty() {
   const [facultyList, setFacultyList] = useState([]);
   const [modalOpen, setModalOpen] = useState(false);
@@ -17,8 +17,29 @@ const willFileInputRef = useRef(null);
   const [selectedSemester, setSelectedSemester] = useState("");
   const navigate = useNavigate();
 
+  const [witLink, setWitLink] = useState("");
+  const [willLink, setWillLink] = useState("");
+  
+  const handleLinkSubmit = async (type) => {
+    const link = type === "wit" ? witLink : willLink;
+    const empId = localStorage.getItem("empId"); // Ensure empId is saved at login
+  
+    if (!empId || !link) return alert("Missing data");
+  
+    try {
+      await axios.post(`http://localhost:4000/api/faculty/submit-link/${empId}`, { type, link });
+      alert(`${type.toUpperCase()} link submitted!`);
+      setWitLink(""); setWillLink("");
+    } catch (err) {
+      console.error(err);
+      alert("Submission failed");
+    }
+  };
+  
+
   useEffect(() => {
-    fetch("http://localhost:3001/faculty")
+    // fetch("http://localhost:4000/faculty")
+    axios.get("http://localhost:4000/faculty")
       .then((response) => response.json())
       .then((data) => setFacultyList(data))
       .catch((error) => console.error("Error fetching faculty:", error));
@@ -105,7 +126,7 @@ const willFileInputRef = useRef(null);
           {/* <li><a href="#">About us</a></li> */}
           {/* <li><a href="#">Contact</a></li> */}
           <li><button className="nav-btn" onClick={() => setModalOpen(true)}>Reports</button></li>
-          <li className="dropdown">
+          {/* <li className="dropdown">
             <button className="nav-btn dropdown-toggle" onClick={() => setUploadDropdownOpen(!uploadDropdownOpen)}>
               Upload Report
             </button>
@@ -123,7 +144,17 @@ const willFileInputRef = useRef(null);
                 </li>
               </ul>
             )}
-          </li>
+          </li> */}
+          <div className="form-group mt-4">
+  <label>WIT Report Drive Link</label>
+  <input className="form-control mb-2" type="url" value={witLink} onChange={(e) => setWitLink(e.target.value)} />
+  <button className="btn btn-success mb-3" onClick={() => handleLinkSubmit("wit")}>Submit WIT Link</button>
+
+  <label>WILL Report Drive Link</label>
+  <input className="form-control mb-2" type="url" value={willLink} onChange={(e) => setWillLink(e.target.value)} />
+  <button className="btn btn-success" onClick={() => handleLinkSubmit("will")}>Submit WILL Link</button>
+</div>
+
 
           {/* Hidden File Inputs */}
           <input

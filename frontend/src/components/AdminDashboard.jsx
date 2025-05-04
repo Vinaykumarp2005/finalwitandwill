@@ -168,19 +168,20 @@ function AdminDashboard() {
                     <td>{faculty.name}</td>
                     <td>{faculty.mappedSubjects.join(", ")}</td>
                     <td>
-                      {faculty.witReport ? (
-                        <a href={`http://localhost:4000/uploads/${faculty.witReport}`} target="_blank" rel="noopener noreferrer">View Report</a>
-                      ) : (
-                        <span className="text-danger">Not Submitted</span>
-                      )}
-                    </td>
-                    <td>
-                      {faculty.willReport ? (
-                        <a href={`http://localhost:4000/uploads/${faculty.willReport}`} target="_blank" rel="noopener noreferrer">View Report</a>
-                      ) : (
-                        <span className="text-danger">Not Submitted</span>
-                      )}
-                    </td>
+  {faculty.witReport ? (
+    <a href={faculty.witReport} target="_blank" rel="noreferrer">View WIT</a>
+  ) : (
+    <span className="text-danger">Not Submitted</span>
+  )}
+</td>
+<td>
+  {faculty.willReport ? (
+    <a href={faculty.willReport} target="_blank" rel="noreferrer">View WILL</a>
+  ) : (
+    <span className="text-danger">Not Submitted</span>
+  )}
+</td>
+
                   </tr>
                 ))
               )}
